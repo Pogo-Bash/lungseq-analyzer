@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .chromosome-bar {
+    @apply h-8 rounded-lg shadow-md cursor-pointer transition-all hover:shadow-lg;
+  }
+  
+  .variant-card {
+    @apply bg-base-200 p-4 rounded-lg shadow hover:shadow-md transition-all;
+  }
+  
+  .pipeline-step {
+    @apply flex items-center gap-4 p-6 bg-base-100 rounded-lg border-2 border-base-300;
+  }
+  
+  .pipeline-step.active {
+    @apply border-primary bg-primary/10;
+  }
+  
+  .pipeline-step.complete {
+    @apply border-success bg-success/10;
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+.spinner {
+  @apply animate-spin rounded-full h-12 w-12 border-4 border-primary border-t-transparent;
+}

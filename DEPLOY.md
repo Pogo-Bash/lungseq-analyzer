@@ -76,9 +76,9 @@ Click "Create Web Service" - Render will:
 ### CORS Headers
 The app REQUIRES these headers for WebAssembly/biowasm to work:
 - `Cross-Origin-Opener-Policy: same-origin`
-- `Cross-Origin-Embedder-Policy: require-corp`
+- `Cross-Origin-Embedder-Policy: credentialless`
 
-These are already configured in `vite.config.js` and will work with `npm run preview`!
+These are automatically applied to ALL responses (including JS chunks) via a custom Vite middleware plugin in `vite.config.js`!
 
 ### Allowed Hosts
 Vite preview server is configured to accept requests from:

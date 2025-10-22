@@ -4,7 +4,6 @@
  */
 
 import Aioli from '@biowasm/aioli';
-import { opfsManager } from '../utils/opfs-manager.js';
 
 class CNVAnalyzer {
   constructor() {
@@ -55,32 +54,17 @@ class CNVAnalyzer {
     try {
       await this.initialize(onProgress);
 
-      // Store BAM file in OPFS
-      onProgress?.({ stage: 'storage', message: 'Storing BAM file in OPFS...', progress: 10 });
-      await opfsManager.writeFile(bamFile.name, bamFile);
-
-      // Mount file in Aioli filesystem
+      // Mount file in Aioli filesystem directly (supports File objects for large files)
       onProgress?.({ stage: 'mount', message: 'Mounting file in biowasm...', progress: 20 });
-      await this.samtools.mount([{
-        name: bamFile.name,
-        data: new Uint8Array(await bamFile.arrayBuffer())
-      }]);
+      await this.samtools.mount(bamFile);
 
-      // Check if BAM is indexed
-      onProgress?.({ stage: 'index', message: 'Checking BAM index...', progress: 30 });
-      const indexFile = new File([], `${bamFile.name}.bai`);
-      let needsIndex = true;
-
+      // Create BAM index (required for coverage analysis)
+      onProgress?.({ stage: 'index', message: 'Creating BAM index...', progress: 30 });
       try {
-        await opfsManager.readFile(`${bamFile.name}.bai`);
-        needsIndex = false;
-      } catch {
-        // Index doesn't exist
-      }
-
-      if (needsIndex) {
-        onProgress?.({ stage: 'index', message: 'Creating BAM index...', progress: 35 });
         await this.samtools.exec(`index ${bamFile.name}`);
+      } catch (error) {
+        // Index might already exist or indexing failed
+        console.warn('BAM indexing warning:', error);
       }
 
       // Get chromosome list if not specified

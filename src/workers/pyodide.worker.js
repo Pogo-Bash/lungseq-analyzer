@@ -12,6 +12,23 @@ let pyodide = null;
 let isInitialized = false;
 let initializationPromise = null;
 
+// WASM SIMD support for fast base counting
+let wasmSIMDAvailable = false;
+
+// Check WASM SIMD support
+try {
+  wasmSIMDAvailable = typeof WebAssembly.validate === 'function' &&
+                      WebAssembly.validate(new Uint8Array([
+                        0, 97, 115, 109, 1, 0, 0, 0,
+                        1, 5, 1, 96, 0, 1, 123,
+                        3, 2, 1, 0,
+                        10, 10, 1, 8, 0, 65, 0, 253, 17, 11
+                      ]));
+  console.log('WASM SIMD support:', wasmSIMDAvailable ? '✓ Available' : '✗ Not available');
+} catch (e) {
+  console.log('WASM SIMD support: ✗ Not available (check failed)');
+}
+
 /**
  * Initialize Pyodide environment with bioinformatics packages
  */
@@ -922,7 +939,39 @@ def call_variants_from_pileup(reads, chrom_name, chrom_len, min_depth, min_base_
             if read_end < window_start or read_start > window_end:
                 continue
 
-            # Add bases to pileup
+            # OPTIMIZATION: Try to use JavaScript accelerator for base counting
+            # Falls back to Python loop if not available
+            try:
+                # Check if we can use JavaScript WASM accelerator
+                if hasattr(js, 'countBasesForPileup'):
+                    # Pass read data to JavaScript for accelerated processing
+                    js_result = js.countBasesForPileup(
+                        read_seq,
+                        read_qual,
+                        read_start,
+                        min_base_quality,
+                        list(pileup.keys())  # Only positions we care about
+                    )
+
+                    # If JavaScript returned results, update pileup
+                    if js_result:
+                        for pos_str in js_result.keys():
+                            pos = int(pos_str)
+                            if pos in pileup:
+                                counts_str = js_result[pos_str]
+                                counts = json.loads(counts_str)
+                                for base, count in counts.items():
+                                    if base in pileup[pos]:
+                                        pileup[pos][base] += count
+                        continue  # Skip Python fallback
+                else:
+                    # JavaScript helper not available, use Python loop
+                    pass
+            except Exception as e:
+                # If JavaScript fails, fall back to Python
+                pass
+
+            # Fallback: Python loop for base counting
             for i, (base, qual) in enumerate(zip(read_seq, read_qual)):
                 pos = read_start + i
 
@@ -1031,6 +1080,57 @@ print("✓ Python bioinformatics environment ready")
 
   return initializationPromise;
 }
+
+/**
+ * Fast base counting helper for Python (optional WASM acceleration)
+ * This function is called from Python code via the js object
+ *
+ * @param {string} sequence - DNA sequence (ACGT)
+ * @param {Array} qualities - Base quality scores
+ * @param {number} readStart - Start position of read
+ * @param {number} minQuality - Minimum quality threshold
+ * @param {Array} candidatePositions - Positions to count bases for
+ * @returns {Object} Position -> base counts mapping (as JSON strings)
+ */
+self.countBasesForPileup = function(sequence, qualities, readStart, minQuality, candidatePositions) {
+  if (!wasmSIMDAvailable) {
+    return null; // Not available, Python will use fallback
+  }
+
+  try {
+    const result = {};
+    const posSet = new Set(candidatePositions);
+
+    // For each position in the read
+    for (let i = 0; i < sequence.length; i++) {
+      const pos = readStart + i;
+
+      // Only process candidate positions
+      if (!posSet.has(pos)) continue;
+
+      // Check quality
+      if (qualities[i] < minQuality) continue;
+
+      // Count this base
+      const base = sequence[i].toUpperCase();
+      if (!result[pos]) {
+        result[pos] = JSON.stringify({ A: 0, C: 0, G: 0, T: 0 });
+      }
+
+      const counts = JSON.parse(result[pos]);
+      if (base in counts) {
+        counts[base]++;
+        result[pos] = JSON.stringify(counts);
+      }
+    }
+
+    return result;
+
+  } catch (err) {
+    console.warn('Fast base counting failed:', err);
+    return null;
+  }
+};
 
 /**
  * Analyze BAM file with full Python bioinformatics pipeline

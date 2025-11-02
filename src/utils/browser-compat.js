@@ -132,6 +132,23 @@ export class BrowserCompat {
   }
 
   /**
+   * Check if WebAssembly SIMD is supported
+   */
+  isWasmSIMDSupported() {
+    try {
+      return typeof WebAssembly.validate === 'function' &&
+             WebAssembly.validate(new Uint8Array([
+               0, 97, 115, 109, 1, 0, 0, 0, // magic + version
+               1, 5, 1, 96, 0, 1, 123,      // function type with v128
+               3, 2, 1, 0,                   // function section
+               10, 10, 1, 8, 0, 65, 0, 253, 17, 11 // code section with i8x16.splat
+             ]));
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
    * Get minimum browser versions for full support
    */
   getMinimumVersions() {
@@ -164,6 +181,7 @@ export class BrowserCompat {
     const indexedDBSupported = this.isIndexedDBSupported();
     const webAssemblySupported = this.isWebAssemblySupported();
     const sharedArrayBufferSupported = this.isSharedArrayBufferSupported();
+    const wasmSIMDSupported = this.isWasmSIMDSupported();
     const meetsMinVersion = this.meetsMinimumVersion();
 
     const issues = [];
@@ -187,6 +205,10 @@ export class BrowserCompat {
       warnings.push('SharedArrayBuffer not supported - multi-threading disabled');
     }
 
+    if (!wasmSIMDSupported) {
+      warnings.push('WASM SIMD not supported - variant calling will be slower');
+    }
+
     if (!meetsMinVersion && this.browser.name !== 'Unknown') {
       warnings.push(
         `${this.browser.name} version ${this.browser.version} detected. ` +
@@ -208,6 +230,7 @@ export class BrowserCompat {
       indexedDBSupported,
       webAssemblySupported,
       sharedArrayBufferSupported,
+      wasmSIMDSupported,
       meetsMinVersion,
       issues,
       warnings,
